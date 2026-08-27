@@ -4,12 +4,12 @@ Aplicación Android para registrar teléfonos propios bajo una misma cuenta y en
 
 ## Estado del proyecto
 
-Este repositorio contiene un MVP funcional preparado para Firebase:
+Este repositorio contiene un MVP funcional con Firebase y Cloudflare Workers:
 
 - inicio de sesión y creación de cuenta con correo y contraseña;
 - registro automático del teléfono y de su token de Firebase Cloud Messaging (FCM);
 - lista de dispositivos asociados exclusivamente al usuario autenticado;
-- orden remota protegida por una Cloud Function;
+- orden remota protegida por un Cloudflare Worker;
 - alarma en primer plano, con volumen de alarma máximo, notificación para detenerla y cierre automático después de cinco minutos;
 - reglas de Firestore que impiden leer o modificar dispositivos de otra cuenta.
 
@@ -18,12 +18,12 @@ La aplicación **no rastrea la ubicación GPS** en esta primera versión. Su obj
 ## Arquitectura
 
 1. Cada teléfono inicia sesión y guarda su registro en `users/{uid}/devices/{deviceId}`.
-2. Al pulsar **Hacer sonar**, la app invoca la función `ringDevice` con el identificador del equipo.
-3. La función comprueba que el dispositivo está dentro de la cuenta autenticada.
+2. Al pulsar **Hacer sonar**, la app envía el identificador del equipo y el token de sesión al endpoint `/ring` del Worker.
+3. El Worker valida la sesión y comprueba que el dispositivo está dentro de esa misma cuenta.
 4. Firebase Cloud Messaging entrega una orden de datos de alta prioridad.
 5. El teléfono objetivo inicia un servicio visible y reproduce la alarma.
 
-No se envía el token FCM desde el cliente que solicita la alarma; la función lo lee del documento protegido del usuario. Esto evita usar la función para activar dispositivos ajenos.
+No se envía el token FCM desde el cliente que solicita la alarma; el Worker lo lee del documento protegido del usuario. Esto evita usar el servicio para activar dispositivos ajenos.
 
 ## Configuración
 
@@ -42,23 +42,35 @@ No se envía el token FCM desde el cliente que solicita la alarma; la función l
 
 `google-services.json` está excluido de Git porque identifica tu proyecto Firebase. No subas cuentas de servicio ni claves privadas al repositorio.
 
-### 2. Desplegar backend y reglas
+### 2. Desplegar reglas de Firestore
 
-Instala Node.js 22 y Firebase CLI. Desde la raíz del proyecto:
+Publica el contenido de `firestore.rules` desde la pestaña **Reglas** de Firestore o mediante Firebase CLI:
 
 ```bash
 firebase login
 firebase use --add
-cd functions
-npm install
-npm run build
-cd ..
-firebase deploy --only functions,firestore:rules
+firebase deploy --only firestore:rules
 ```
 
-El despliegue de Cloud Functions normalmente requiere que el proyecto Firebase tenga facturación habilitada.
+### 3. Desplegar el backend gratuito
 
-### 3. Ejecutar Android
+Conecta el repositorio a Cloudflare Workers y configura:
+
+```text
+Root directory: /worker
+Build command: npm run check
+Deploy command: npm run deploy
+```
+
+Agrega estas variables en **Settings > Runtime variables and secrets**:
+
+- `FIREBASE_PROJECT_ID`: identificador del proyecto, como texto.
+- `FIREBASE_WEB_API_KEY`: clave web de Firebase, como secreto.
+- `FIREBASE_SERVICE_ACCOUNT`: contenido completo del JSON de la cuenta de servicio, como secreto.
+
+La aplicación usa actualmente `https://encuentra-mi-dispositivo-api.cdavidleonr.workers.dev/ring`. Esta arquitectura funciona con Firebase Spark y el plan gratuito de Cloudflare dentro de sus respectivos límites.
+
+### 4. Ejecutar Android
 
 1. Abre la raíz del repositorio con Android Studio.
 2. Espera la sincronización de Gradle.
@@ -90,4 +102,3 @@ Por estas restricciones, ninguna aplicación común puede prometer que sonará s
 ## Uso responsable
 
 El proyecto está diseñado únicamente para dispositivos propios registrados voluntariamente en la misma cuenta. No debe adaptarse para vigilar personas, ocultar su funcionamiento ni controlar equipos sin permiso.
-
