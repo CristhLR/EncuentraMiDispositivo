@@ -9,6 +9,7 @@ captures/
 app/google-services.json
 functions/lib/
 functions/node_modules/
+worker/node_modules/
+worker/.wrangler/
 .firebase/
 firebase-debug.log
-
