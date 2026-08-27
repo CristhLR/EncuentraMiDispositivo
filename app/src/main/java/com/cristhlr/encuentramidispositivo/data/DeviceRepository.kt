@@ -9,14 +9,18 @@ import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.ListenerRegistration
 import com.google.firebase.firestore.SetOptions
-import com.google.firebase.functions.FirebaseFunctions
 import com.google.firebase.messaging.FirebaseMessaging
+import java.io.IOException
+import java.net.HttpURLConnection
+import java.net.URL
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.tasks.await
+import kotlinx.coroutines.withContext
+import org.json.JSONObject
 
 class DeviceRepository(private val context: Context) {
     private val auth = FirebaseAuth.getInstance()
     private val firestore = FirebaseFirestore.getInstance()
-    private val functions = FirebaseFunctions.getInstance()
     private val messaging = FirebaseMessaging.getInstance()
 
     val currentUser get() = auth.currentUser
@@ -83,12 +87,51 @@ class DeviceRepository(private val context: Context) {
     }
 
     suspend fun ringDevice(deviceId: String) {
-        functions.getHttpsCallable("ringDevice")
-            .call(mapOf("deviceId" to deviceId))
-            .await()
+        val user = auth.currentUser ?: error("Debes iniciar sesión.")
+        val idToken = user.getIdToken(false).await().token
+            ?: error("No se pudo validar tu sesión.")
+
+        withContext(Dispatchers.IO) {
+            val connection = (URL(RING_ENDPOINT).openConnection() as HttpURLConnection).apply {
+                requestMethod = "POST"
+                connectTimeout = 15_000
+                readTimeout = 20_000
+                doOutput = true
+                setRequestProperty("Authorization", "Bearer $idToken")
+                setRequestProperty("Content-Type", "application/json; charset=utf-8")
+                setRequestProperty("Accept", "application/json")
+            }
+
+            try {
+                val requestBody = JSONObject().put("deviceId", deviceId).toString()
+                connection.outputStream.bufferedWriter(Charsets.UTF_8).use { writer ->
+                    writer.write(requestBody)
+                }
+
+                val status = connection.responseCode
+                val responseBody = (if (status in 200..299) connection.inputStream else connection.errorStream)
+                    ?.bufferedReader(Charsets.UTF_8)
+                    ?.use { it.readText() }
+                    .orEmpty()
+
+                if (status !in 200..299) {
+                    val message = runCatching { JSONObject(responseBody).optString("error") }
+                        .getOrNull()
+                        .takeUnless { it.isNullOrBlank() }
+                        ?: "No se pudo enviar la alarma."
+                    throw IOException(message)
+                }
+            } finally {
+                connection.disconnect()
+            }
+        }
     }
 
     private fun deviceCollection(userId: String) =
         firestore.collection("users").document(userId).collection("devices")
-}
 
+    private companion object {
+        const val RING_ENDPOINT =
+            "https://encuentra-mi-dispositivo-api.cdavidleonr.workers.dev/ring"
+    }
+}
