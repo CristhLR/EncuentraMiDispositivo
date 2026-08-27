@@ -1,0 +1,21 @@
+{
+  "name": "encuentra-mi-dispositivo-functions",
+  "private": true,
+  "main": "lib/index.js",
+  "engines": {
+    "node": "22"
+  },
+  "scripts": {
+    "build": "tsc",
+    "deploy": "firebase deploy --only functions,firestore:rules",
+    "lint": "tsc --noEmit"
+  },
+  "dependencies": {
+    "firebase-admin": "^13.4.0",
+    "firebase-functions": "^6.4.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.8.3"
+  }
+}
+
