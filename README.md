@@ -1,14 +1,15 @@
 # Encuentra mi dispositivo
 
-Aplicación Android para registrar teléfonos propios bajo una misma cuenta y enviarles una orden remota para que reproduzcan una alarma al volumen máximo disponible.
+Aplicación Android para conectar teléfonos propios o familiares mediante cuentas individuales y enviarles una orden remota para que reproduzcan una alarma al volumen máximo disponible.
 
 ## Estado del proyecto
 
 Este repositorio contiene un MVP funcional con Firebase y Cloudflare Workers:
 
 - inicio de sesión y creación de cuenta con correo y contraseña;
+- creación de grupos familiares y unión mediante un código de ocho caracteres;
 - registro automático del teléfono y de su token de Firebase Cloud Messaging (FCM);
-- lista de dispositivos asociados exclusivamente al usuario autenticado;
+- lista compartida de dispositivos para los miembros autenticados del grupo;
 - orden remota protegida por un Cloudflare Worker;
 - alarma en primer plano, con volumen de alarma máximo, notificación para detenerla y cierre automático después de cinco minutos;
 - reglas de Firestore que impiden leer o modificar dispositivos de otra cuenta.
@@ -17,11 +18,12 @@ La aplicación **no rastrea la ubicación GPS** en esta primera versión. Su obj
 
 ## Arquitectura
 
-1. Cada teléfono inicia sesión y guarda su registro en `users/{uid}/devices/{deviceId}`.
-2. Al pulsar **Hacer sonar**, la app envía el identificador del equipo y el token de sesión al endpoint `/ring` del Worker.
-3. El Worker valida la sesión y comprueba que el dispositivo está dentro de esa misma cuenta.
-4. Firebase Cloud Messaging entrega una orden de datos de alta prioridad.
-5. El teléfono objetivo inicia un servicio visible y reproduce la alarma.
+1. Cada persona crea su propia cuenta y registra su teléfono en `users/{uid}/devices/{deviceId}`.
+2. Una persona crea el grupo familiar y comparte el código; las demás se unen con sus propias cuentas.
+3. Al pulsar **Hacer sonar**, la app envía el identificador del equipo y el token de sesión al endpoint `/ring` del Worker.
+4. El Worker valida que quien solicita la alarma y el teléfono pertenezcan al mismo grupo.
+5. Firebase Cloud Messaging entrega una orden de datos de alta prioridad.
+6. El teléfono objetivo inicia un servicio visible y reproduce la alarma.
 
 No se envía el token FCM desde el cliente que solicita la alarma; el Worker lo lee del documento protegido del usuario. Esto evita usar el servicio para activar dispositivos ajenos.
 
@@ -76,8 +78,9 @@ La aplicación usa actualmente `https://encuentra-mi-dispositivo-api.cdavidleonr
 2. Espera la sincronización de Gradle.
 3. Ejecuta la app en dos teléfonos Android con servicios de Google Play.
 4. Acepta el permiso de notificaciones.
-5. Inicia sesión con la misma cuenta en ambos equipos.
-6. Desde uno, pulsa **Hacer sonar** sobre el otro.
+5. Usa una cuenta diferente en cada persona.
+6. Crea un grupo familiar en un equipo y comparte el código con los demás.
+7. Cuando todos se unan, pulsa **Hacer sonar** sobre cualquier dispositivo del grupo.
 
 ## Limitaciones reales de Android
 
@@ -101,4 +104,4 @@ Por estas restricciones, ninguna aplicación común puede prometer que sonará s
 
 ## Uso responsable
 
-El proyecto está diseñado únicamente para dispositivos propios registrados voluntariamente en la misma cuenta. No debe adaptarse para vigilar personas, ocultar su funcionamiento ni controlar equipos sin permiso.
+El proyecto está diseñado únicamente para dispositivos propios o familiares registrados voluntariamente en un grupo compartido. No debe adaptarse para vigilar personas, ocultar su funcionamiento ni controlar equipos sin permiso.

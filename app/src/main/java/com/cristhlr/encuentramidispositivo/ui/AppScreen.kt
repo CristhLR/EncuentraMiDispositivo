@@ -62,11 +62,20 @@ fun AppScreen(viewModel: MainViewModel) {
             onSignIn = viewModel::signIn,
             onRegister = viewModel::createAccount,
         )
+    } else if (state.group == null) {
+        FamilySetupScreen(
+            state = state,
+            snackbar = snackbar,
+            onCreateGroup = viewModel::createFamilyGroup,
+            onJoinGroup = viewModel::joinFamilyGroup,
+            onSignOut = viewModel::signOut,
+        )
     } else {
         DevicesScreen(
             state = state,
             snackbar = snackbar,
             onRing = viewModel::ring,
+            onRefresh = viewModel::refresh,
             onSignOut = viewModel::signOut,
         )
     }
@@ -91,7 +100,7 @@ private fun AuthScreen(
         ) {
             Text("Encuentra mi dispositivo", style = MaterialTheme.typography.headlineMedium)
             Text(
-                "Inicia sesión con la misma cuenta en todos tus teléfonos.",
+                "Cada persona usa su propia cuenta y se une al mismo grupo familiar.",
                 modifier = Modifier.padding(top = 8.dp, bottom = 24.dp),
             )
             OutlinedTextField(
@@ -134,17 +143,88 @@ private fun AuthScreen(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
+private fun FamilySetupScreen(
+    state: MainUiState,
+    snackbar: SnackbarHostState,
+    onCreateGroup: (String) -> Unit,
+    onJoinGroup: (String) -> Unit,
+    onSignOut: () -> Unit,
+) {
+    var groupName by remember { mutableStateOf("") }
+    var inviteCode by remember { mutableStateOf("") }
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("Grupo familiar") },
+                actions = { TextButton(onClick = onSignOut) { Text("Salir") } },
+            )
+        },
+        snackbarHost = { SnackbarHost(snackbar) },
+    ) { padding ->
+        Column(
+            modifier = Modifier.fillMaxSize().padding(padding).padding(24.dp),
+            verticalArrangement = Arrangement.Center,
+        ) {
+            Text("Conecta a tu familia", style = MaterialTheme.typography.headlineMedium)
+            Text(
+                "Una persona crea el grupo y comparte el código. Los demás pueden entrar usando cuentas diferentes.",
+                modifier = Modifier.padding(top = 8.dp, bottom = 24.dp),
+            )
+            OutlinedTextField(
+                value = groupName,
+                onValueChange = { groupName = it },
+                modifier = Modifier.fillMaxWidth(),
+                label = { Text("Nombre del grupo") },
+                placeholder = { Text("Familia León") },
+                singleLine = true,
+            )
+            Button(
+                onClick = { onCreateGroup(groupName) },
+                modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
+                enabled = !state.loading && groupName.trim().length >= 2,
+            ) {
+                Text("Crear grupo familiar")
+            }
+            Text("o", modifier = Modifier.align(Alignment.CenterHorizontally).padding(18.dp))
+            OutlinedTextField(
+                value = inviteCode,
+                onValueChange = { inviteCode = it.uppercase().take(8) },
+                modifier = Modifier.fillMaxWidth(),
+                label = { Text("Código de invitación") },
+                singleLine = true,
+            )
+            OutlinedButton(
+                onClick = { onJoinGroup(inviteCode) },
+                modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
+                enabled = !state.loading && inviteCode.length == 8,
+            ) {
+                Text("Unirme al grupo")
+            }
+            if (state.loading) {
+                CircularProgressIndicator(modifier = Modifier.align(Alignment.CenterHorizontally).padding(16.dp))
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
 private fun DevicesScreen(
     state: MainUiState,
     snackbar: SnackbarHostState,
     onRing: (Device) -> Unit,
+    onRefresh: () -> Unit,
     onSignOut: () -> Unit,
 ) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Mis dispositivos") },
-                actions = { TextButton(onClick = onSignOut) { Text("Salir") } },
+                title = { Text(state.group?.name ?: "Grupo familiar") },
+                actions = {
+                    TextButton(onClick = onRefresh, enabled = !state.loading) { Text("Actualizar") }
+                    TextButton(onClick = onSignOut) { Text("Salir") }
+                },
             )
         },
         snackbarHost = { SnackbarHost(snackbar) },
@@ -156,6 +236,11 @@ private fun DevicesScreen(
         ) {
             item {
                 Text("Cuenta: ${state.email}", style = MaterialTheme.typography.bodyMedium)
+                Text(
+                    "Código para invitar: ${state.group?.inviteCode}",
+                    style = MaterialTheme.typography.titleMedium,
+                    modifier = Modifier.padding(top = 4.dp),
+                )
                 Text(
                     "El teléfono debe estar encendido, conectado a Internet y haber abierto la app al menos una vez.",
                     modifier = Modifier.padding(top = 4.dp, bottom = 8.dp),
@@ -172,7 +257,8 @@ private fun DevicesScreen(
             items(state.devices, key = { it.id }) { device ->
                 DeviceCard(
                     device = device,
-                    isCurrent = device.id == state.currentDeviceId,
+                    isCurrent = device.ownerUid == state.currentUserUid &&
+                        device.deviceId == state.currentDeviceId,
                     enabled = !state.loading,
                     onRing = { onRing(device) },
                 )
@@ -198,6 +284,7 @@ private fun DeviceCard(
                 Column(modifier = Modifier.weight(1f)) {
                     Text(device.name, style = MaterialTheme.typography.titleMedium)
                     Text(if (isCurrent) "Este dispositivo" else device.model)
+                    Text(device.ownerEmail, style = MaterialTheme.typography.bodySmall)
                     Text(
                         "Última conexión: ${formatLastSeen(device)}",
                         style = MaterialTheme.typography.bodySmall,
@@ -212,7 +299,7 @@ private fun DeviceCard(
 }
 
 private fun formatLastSeen(device: Device): String {
-    val date = device.lastSeen?.toDate() ?: return "pendiente"
-    return DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT).format(Date(date.time))
+    if (device.lastSeenMillis <= 0) return "pendiente"
+    return DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT)
+        .format(Date(device.lastSeenMillis))
 }
-

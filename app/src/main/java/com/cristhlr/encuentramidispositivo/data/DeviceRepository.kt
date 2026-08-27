@@ -4,10 +4,11 @@ import android.content.Context
 import android.os.Build
 import android.provider.Settings
 import com.cristhlr.encuentramidispositivo.model.Device
+import com.cristhlr.encuentramidispositivo.model.FamilyGroup
+import com.cristhlr.encuentramidispositivo.model.FamilyState
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
-import com.google.firebase.firestore.ListenerRegistration
 import com.google.firebase.firestore.SetOptions
 import com.google.firebase.messaging.FirebaseMessaging
 import java.io.IOException
@@ -47,7 +48,6 @@ class DeviceRepository(private val context: Context) {
         val token = messaging.token.await()
         val manufacturer = Build.MANUFACTURER.replaceFirstChar { it.uppercase() }
         val model = Build.MODEL
-        val deviceId = currentDeviceId()
         val data = mapOf(
             "name" to "$manufacturer $model",
             "model" to model,
@@ -55,72 +55,99 @@ class DeviceRepository(private val context: Context) {
             "platform" to "Android",
             "fcmToken" to token,
             "lastSeen" to FieldValue.serverTimestamp(),
-            "appVersion" to "0.1.0",
+            "appVersion" to "0.2.0",
         )
-        deviceCollection(user.uid).document(deviceId).set(data, SetOptions.merge()).await()
+        deviceCollection(user.uid).document(currentDeviceId()).set(data, SetOptions.merge()).await()
+        syncCurrentDeviceToGroup()
     }
 
     suspend fun updateCurrentToken(token: String) {
         val user = auth.currentUser ?: return
         deviceCollection(user.uid).document(currentDeviceId()).set(
-            mapOf(
-                "fcmToken" to token,
-                "lastSeen" to FieldValue.serverTimestamp(),
-            ),
+            mapOf("fcmToken" to token, "lastSeen" to FieldValue.serverTimestamp()),
             SetOptions.merge(),
         ).await()
+        syncCurrentDeviceToGroup()
     }
 
-    fun listenToDevices(
-        userId: String,
-        onChange: (List<Device>) -> Unit,
-        onError: (Throwable) -> Unit,
-    ): ListenerRegistration = deviceCollection(userId).addSnapshotListener { snapshot, error ->
-        if (error != null) {
-            onError(error)
-            return@addSnapshotListener
+    suspend fun createFamilyGroup(name: String) {
+        api("/groups/create", JSONObject().put("name", name.trim()))
+        syncCurrentDeviceToGroup()
+    }
+
+    suspend fun joinFamilyGroup(code: String) {
+        api("/groups/join", JSONObject().put("code", code.trim().uppercase()))
+        syncCurrentDeviceToGroup()
+    }
+
+    suspend fun loadFamilyState(): FamilyState {
+        val response = api("/state", JSONObject())
+        val groupJson = response.optJSONObject("group")
+        val group = groupJson?.let {
+            FamilyGroup(
+                id = it.getString("id"),
+                name = it.getString("name"),
+                inviteCode = it.getString("inviteCode"),
+            )
         }
-        val devices = snapshot?.documents.orEmpty().mapNotNull { document ->
-            document.toObject(Device::class.java)?.copy(id = document.id)
-        }.sortedByDescending { it.lastSeen?.seconds ?: 0L }
-        onChange(devices)
+        val devicesJson = response.optJSONArray("devices")
+        val devices = buildList {
+            if (devicesJson != null) {
+                for (index in 0 until devicesJson.length()) {
+                    val item = devicesJson.getJSONObject(index)
+                    add(
+                        Device(
+                            id = item.getString("id"),
+                            deviceId = item.getString("deviceId"),
+                            ownerUid = item.getString("ownerUid"),
+                            ownerEmail = item.optString("ownerEmail"),
+                            name = item.optString("name", "Dispositivo Android"),
+                            model = item.optString("model"),
+                            platform = item.optString("platform", "Android"),
+                            lastSeenMillis = item.optLong("lastSeenMillis"),
+                        ),
+                    )
+                }
+            }
+        }
+        return FamilyState(group, devices)
     }
 
-    suspend fun ringDevice(deviceId: String) {
+    suspend fun ringDevice(groupDeviceId: String) {
+        api("/ring", JSONObject().put("deviceId", groupDeviceId))
+    }
+
+    private suspend fun syncCurrentDeviceToGroup() {
+        api("/devices/register", JSONObject().put("deviceId", currentDeviceId()))
+    }
+
+    private suspend fun api(path: String, body: JSONObject): JSONObject {
         val user = auth.currentUser ?: error("Debes iniciar sesión.")
         val idToken = user.getIdToken(false).await().token
             ?: error("No se pudo validar tu sesión.")
 
-        withContext(Dispatchers.IO) {
-            val connection = (URL(RING_ENDPOINT).openConnection() as HttpURLConnection).apply {
+        return withContext(Dispatchers.IO) {
+            val connection = (URL(API_BASE_URL + path).openConnection() as HttpURLConnection).apply {
                 requestMethod = "POST"
                 connectTimeout = 15_000
-                readTimeout = 20_000
+                readTimeout = 25_000
                 doOutput = true
                 setRequestProperty("Authorization", "Bearer $idToken")
                 setRequestProperty("Content-Type", "application/json; charset=utf-8")
                 setRequestProperty("Accept", "application/json")
             }
-
             try {
-                val requestBody = JSONObject().put("deviceId", deviceId).toString()
-                connection.outputStream.bufferedWriter(Charsets.UTF_8).use { writer ->
-                    writer.write(requestBody)
-                }
-
+                connection.outputStream.bufferedWriter(Charsets.UTF_8).use { it.write(body.toString()) }
                 val status = connection.responseCode
                 val responseBody = (if (status in 200..299) connection.inputStream else connection.errorStream)
-                    ?.bufferedReader(Charsets.UTF_8)
-                    ?.use { it.readText() }
-                    .orEmpty()
-
+                    ?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }.orEmpty()
                 if (status !in 200..299) {
                     val message = runCatching { JSONObject(responseBody).optString("error") }
-                        .getOrNull()
-                        .takeUnless { it.isNullOrBlank() }
-                        ?: "No se pudo enviar la alarma."
+                        .getOrNull().takeUnless { it.isNullOrBlank() }
+                        ?: "No se pudo completar la solicitud."
                     throw IOException(message)
                 }
+                if (responseBody.isBlank()) JSONObject() else JSONObject(responseBody)
             } finally {
                 connection.disconnect()
             }
@@ -131,7 +158,6 @@ class DeviceRepository(private val context: Context) {
         firestore.collection("users").document(userId).collection("devices")
 
     private companion object {
-        const val RING_ENDPOINT =
-            "https://encuentra-mi-dispositivo-api.cdavidleonr.workers.dev/ring"
+        const val API_BASE_URL = "https://encuentra-mi-dispositivo-api.cdavidleonr.workers.dev"
     }
 }

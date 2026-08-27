@@ -5,8 +5,8 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.cristhlr.encuentramidispositivo.data.DeviceRepository
 import com.cristhlr.encuentramidispositivo.model.Device
+import com.cristhlr.encuentramidispositivo.model.FamilyGroup
 import com.google.firebase.auth.FirebaseAuth
-import com.google.firebase.firestore.ListenerRegistration
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -15,6 +15,8 @@ import kotlinx.coroutines.launch
 
 data class MainUiState(
     val email: String? = null,
+    val currentUserUid: String = "",
+    val group: FamilyGroup? = null,
     val devices: List<Device> = emptyList(),
     val currentDeviceId: String = "",
     val loading: Boolean = false,
@@ -28,22 +30,26 @@ class MainViewModel(private val repository: DeviceRepository) : ViewModel() {
     )
     val state: StateFlow<MainUiState> = _state.asStateFlow()
 
-    private var deviceListener: ListenerRegistration? = null
     private val authListener = FirebaseAuth.AuthStateListener { auth ->
-        deviceListener?.remove()
         val user = auth.currentUser
         if (user == null) {
             _state.value = MainUiState(currentDeviceId = repository.currentDeviceId())
         } else {
-            _state.update { it.copy(email = user.email, loading = true, error = null) }
-            deviceListener = repository.listenToDevices(
-                userId = user.uid,
-                onChange = { devices -> _state.update { it.copy(devices = devices, loading = false) } },
-                onError = { error -> _state.update { it.copy(error = error.message, loading = false) } },
-            )
+            _state.update {
+                it.copy(
+                    email = user.email,
+                    currentUserUid = user.uid,
+                    loading = true,
+                    error = null,
+                )
+            }
             viewModelScope.launch {
-                runCatching { repository.registerCurrentDevice() }
-                    .onFailure { error -> _state.update { it.copy(error = error.readableMessage()) } }
+                runCatching {
+                    repository.registerCurrentDevice()
+                    refreshFromServer()
+                }.onFailure { error ->
+                    _state.update { it.copy(error = error.readableMessage(), loading = false) }
+                }
             }
         }
     }
@@ -60,6 +66,23 @@ class MainViewModel(private val repository: DeviceRepository) : ViewModel() {
         repository.createAccount(email, password)
     }
 
+    fun createFamilyGroup(name: String) = runAction(successMessage = "Grupo familiar creado") {
+        repository.createFamilyGroup(name)
+        repository.registerCurrentDevice()
+        refreshFromServer()
+    }
+
+    fun joinFamilyGroup(code: String) = runAction(successMessage = "Te uniste al grupo familiar") {
+        repository.joinFamilyGroup(code)
+        repository.registerCurrentDevice()
+        refreshFromServer()
+    }
+
+    fun refresh() = runAction {
+        repository.registerCurrentDevice()
+        refreshFromServer()
+    }
+
     fun ring(device: Device) = runAction(successMessage = "Orden enviada a ${device.name}") {
         repository.ringDevice(device.id)
     }
@@ -67,6 +90,13 @@ class MainViewModel(private val repository: DeviceRepository) : ViewModel() {
     fun signOut() = repository.signOut()
 
     fun clearFeedback() = _state.update { it.copy(message = null, error = null) }
+
+    private suspend fun refreshFromServer() {
+        val family = repository.loadFamilyState()
+        _state.update {
+            it.copy(group = family.group, devices = family.devices, loading = false)
+        }
+    }
 
     private fun runAction(successMessage: String? = null, action: suspend () -> Unit) {
         viewModelScope.launch {
@@ -80,7 +110,6 @@ class MainViewModel(private val repository: DeviceRepository) : ViewModel() {
     }
 
     override fun onCleared() {
-        deviceListener?.remove()
         repository.removeAuthListener(authListener)
         super.onCleared()
     }
@@ -94,4 +123,3 @@ class MainViewModel(private val repository: DeviceRepository) : ViewModel() {
 
 private fun Throwable.readableMessage(): String =
     localizedMessage ?: "Ocurrió un error. Revisa tu conexión e inténtalo de nuevo."
-
