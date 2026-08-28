@@ -85,6 +85,11 @@ class MainViewModel(private val repository: DeviceRepository) : ViewModel() {
         repository.ringDevice(device.id)
     }
 
+    fun stopCurrentRing() {
+        repository.stopCurrentRing()
+        _state.update { it.copy(message = "Alarma detenida") }
+    }
+
     fun signOut() = repository.signOut()
 
     fun clearFeedback() = _state.update { it.copy(message = null, error = null) }

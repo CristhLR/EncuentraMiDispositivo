@@ -1,11 +1,13 @@
 package com.cristhlr.encuentramidispositivo.data
 
 import android.content.Context
+import android.content.Intent
 import android.os.Build
 import android.provider.Settings
 import com.cristhlr.encuentramidispositivo.model.Device
 import com.cristhlr.encuentramidispositivo.model.FamilyGroup
 import com.cristhlr.encuentramidispositivo.model.FamilyState
+import com.cristhlr.encuentramidispositivo.service.RingService
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
@@ -40,6 +42,13 @@ class DeviceRepository(private val context: Context) {
 
     fun signOut() = auth.signOut()
 
+    fun stopCurrentRing() {
+        val intent = Intent(context, RingService::class.java).apply {
+            action = RingService.ACTION_STOP
+        }
+        context.startService(intent)
+    }
+
     fun currentDeviceId(): String =
         Settings.Secure.getString(context.contentResolver, Settings.Secure.ANDROID_ID)
 
@@ -55,7 +64,7 @@ class DeviceRepository(private val context: Context) {
             "platform" to "Android",
             "fcmToken" to token,
             "lastSeen" to FieldValue.serverTimestamp(),
-            "appVersion" to "0.2.0",
+            "appVersion" to "0.2.2",
         )
         deviceCollection(user.uid).document(currentDeviceId()).set(data, SetOptions.merge()).await()
         runCatching { syncCurrentDeviceToGroup() }
