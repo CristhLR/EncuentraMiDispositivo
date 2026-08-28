@@ -85,9 +85,13 @@ class MainViewModel(private val repository: DeviceRepository) : ViewModel() {
         repository.ringDevice(device.id)
     }
 
-    fun stopCurrentRing() {
-        repository.stopCurrentRing()
-        _state.update { it.copy(message = "Alarma detenida") }
+    fun stop(device: Device) = runAction(successMessage = "Orden de detener enviada a ${device.name}") {
+        if (device.ownerUid == _state.value.currentUserUid &&
+            device.deviceId == _state.value.currentDeviceId
+        ) {
+            repository.stopCurrentRing()
+        }
+        repository.stopDevice(device.id)
     }
 
     fun signOut() = repository.signOut()

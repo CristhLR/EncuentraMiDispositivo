@@ -64,7 +64,7 @@ class DeviceRepository(private val context: Context) {
             "platform" to "Android",
             "fcmToken" to token,
             "lastSeen" to FieldValue.serverTimestamp(),
-            "appVersion" to "0.2.2",
+            "appVersion" to "0.2.3",
         )
         deviceCollection(user.uid).document(currentDeviceId()).set(data, SetOptions.merge()).await()
         runCatching { syncCurrentDeviceToGroup() }
@@ -122,6 +122,10 @@ class DeviceRepository(private val context: Context) {
 
     suspend fun ringDevice(groupDeviceId: String) {
         api("/ring", JSONObject().put("deviceId", groupDeviceId))
+    }
+
+    suspend fun stopDevice(groupDeviceId: String) {
+        api("/stop", JSONObject().put("deviceId", groupDeviceId))
     }
 
     private suspend fun syncCurrentDeviceToGroup() {

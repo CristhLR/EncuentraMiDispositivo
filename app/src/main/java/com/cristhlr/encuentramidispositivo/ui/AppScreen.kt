@@ -76,7 +76,7 @@ fun AppScreen(viewModel: MainViewModel) {
             state = state,
             snackbar = snackbar,
             onRing = viewModel::ring,
-            onStopCurrentRing = viewModel::stopCurrentRing,
+            onStop = viewModel::stop,
             onRefresh = viewModel::refresh,
             onSignOut = viewModel::signOut,
         )
@@ -224,7 +224,7 @@ private fun DevicesScreen(
     state: MainUiState,
     snackbar: SnackbarHostState,
     onRing: (Device) -> Unit,
-    onStopCurrentRing: () -> Unit,
+    onStop: (Device) -> Unit,
     onRefresh: () -> Unit,
     onSignOut: () -> Unit,
 ) {
@@ -272,7 +272,7 @@ private fun DevicesScreen(
                         device.deviceId == state.currentDeviceId,
                     enabled = !state.loading,
                     onRing = { onRing(device) },
-                    onStop = onStopCurrentRing,
+                    onStop = { onStop(device) },
                 )
             }
         }
@@ -307,10 +307,8 @@ private fun DeviceCard(
                     OutlinedButton(onClick = onRing, enabled = enabled) {
                         Text("Hacer sonar")
                     }
-                    if (isCurrent) {
-                        TextButton(onClick = onStop) {
-                            Text("Detener sonido")
-                        }
+                    TextButton(onClick = onStop, enabled = enabled) {
+                        Text("Detener sonido")
                     }
                 }
             }

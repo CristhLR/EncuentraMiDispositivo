@@ -15,12 +15,15 @@ class FcmService : FirebaseMessagingService() {
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     override fun onMessageReceived(message: RemoteMessage) {
-        if (message.data["action"] != "RING") return
-
-        val intent = Intent(this, RingService::class.java).apply {
-            action = RingService.ACTION_START
+        when (message.data["action"]) {
+            "RING" -> {
+                val intent = Intent(this, RingService::class.java).apply {
+                    action = RingService.ACTION_START
+                }
+                ContextCompat.startForegroundService(this, intent)
+            }
+            "STOP" -> stopService(Intent(this, RingService::class.java))
         }
-        ContextCompat.startForegroundService(this, intent)
     }
 
     override fun onNewToken(token: String) {

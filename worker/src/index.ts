@@ -57,7 +57,9 @@ export default {
         case "/devices/register":
           return json(await registerGroupDevice(env, user, body, googleToken));
         case "/ring":
-          return json(await ringGroupDevice(env, user, body, googleToken));
+          return json(await controlGroupDevice(env, user, body, googleToken, "RING"));
+        case "/stop":
+          return json(await controlGroupDevice(env, user, body, googleToken, "STOP"));
         default:
           return json({ error: "Ruta no encontrada." }, 404);
       }
@@ -249,11 +251,12 @@ async function readFamilyState(env: Env, user: AuthUser, token: string): Promise
   };
 }
 
-async function ringGroupDevice(
+async function controlGroupDevice(
   env: Env,
   user: AuthUser,
   body: Record<string, unknown>,
   token: string,
+  action: "RING" | "STOP",
 ): Promise<unknown> {
   const groupDeviceId = typeof body.deviceId === "string" ? body.deviceId : "";
   if (!/^[A-Za-z0-9._:-]{8,256}$/.test(groupDeviceId)) {
@@ -272,8 +275,8 @@ async function ringGroupDevice(
   const privateDevice = await getDocument(env, `users/${ownerUid}/devices/${deviceId}`, token);
   const fcmToken = field(privateDevice, "fcmToken");
   if (!fcmToken) throw new HttpError(409, "El teléfono todavía no puede recibir órdenes.");
-  await sendRingCommand(env.FIREBASE_PROJECT_ID, fcmToken, token);
-  return { accepted: true };
+  await sendDeviceCommand(env.FIREBASE_PROJECT_ID, fcmToken, token, action);
+  return { accepted: true, action };
 }
 
 async function readUserGroupId(env: Env, uid: string, token: string): Promise<string | null> {
@@ -370,7 +373,12 @@ function text(value: string): FirestoreValue { return { stringValue: value }; }
 function flag(value: boolean): FirestoreValue { return { booleanValue: value }; }
 function time(value: string): FirestoreValue { return { timestampValue: value }; }
 
-async function sendRingCommand(projectId: string, fcmToken: string, token: string): Promise<void> {
+async function sendDeviceCommand(
+  projectId: string,
+  fcmToken: string,
+  token: string,
+  action: "RING" | "STOP",
+): Promise<void> {
   const response = await fetch(
     `https://fcm.googleapis.com/v1/projects/${encodeURIComponent(projectId)}/messages:send`,
     {
@@ -379,7 +387,7 @@ async function sendRingCommand(projectId: string, fcmToken: string, token: strin
       body: JSON.stringify({
         message: {
           token: fcmToken,
-          data: { action: "RING", commandId: crypto.randomUUID() },
+          data: { action, commandId: crypto.randomUUID() },
           android: { priority: "HIGH", ttl: "60s" },
         },
       }),
