@@ -58,7 +58,7 @@ class DeviceRepository(private val context: Context) {
             "appVersion" to "0.2.0",
         )
         deviceCollection(user.uid).document(currentDeviceId()).set(data, SetOptions.merge()).await()
-        syncCurrentDeviceToGroup()
+        runCatching { syncCurrentDeviceToGroup() }
     }
 
     suspend fun updateCurrentToken(token: String) {
@@ -67,17 +67,15 @@ class DeviceRepository(private val context: Context) {
             mapOf("fcmToken" to token, "lastSeen" to FieldValue.serverTimestamp()),
             SetOptions.merge(),
         ).await()
-        syncCurrentDeviceToGroup()
+        runCatching { syncCurrentDeviceToGroup() }
     }
 
     suspend fun createFamilyGroup(name: String) {
         api("/groups/create", JSONObject().put("name", name.trim()))
-        syncCurrentDeviceToGroup()
     }
 
     suspend fun joinFamilyGroup(code: String) {
         api("/groups/join", JSONObject().put("code", code.trim().uppercase()))
-        syncCurrentDeviceToGroup()
     }
 
     suspend fun loadFamilyState(): FamilyState {

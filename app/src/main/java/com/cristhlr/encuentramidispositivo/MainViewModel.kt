@@ -44,10 +44,8 @@ class MainViewModel(private val repository: DeviceRepository) : ViewModel() {
                 )
             }
             viewModelScope.launch {
-                runCatching {
-                    repository.registerCurrentDevice()
-                    refreshFromServer()
-                }.onFailure { error ->
+                runCatching { repository.registerCurrentDevice() }
+                runCatching { refreshFromServer() }.onFailure { error ->
                     _state.update { it.copy(error = error.readableMessage(), loading = false) }
                 }
             }
@@ -68,18 +66,18 @@ class MainViewModel(private val repository: DeviceRepository) : ViewModel() {
 
     fun createFamilyGroup(name: String) = runAction(successMessage = "Grupo familiar creado") {
         repository.createFamilyGroup(name)
-        repository.registerCurrentDevice()
+        runCatching { repository.registerCurrentDevice() }
         refreshFromServer()
     }
 
     fun joinFamilyGroup(code: String) = runAction(successMessage = "Te uniste al grupo familiar") {
         repository.joinFamilyGroup(code)
-        repository.registerCurrentDevice()
+        runCatching { repository.registerCurrentDevice() }
         refreshFromServer()
     }
 
     fun refresh() = runAction {
-        repository.registerCurrentDevice()
+        runCatching { repository.registerCurrentDevice() }
         refreshFromServer()
     }
 

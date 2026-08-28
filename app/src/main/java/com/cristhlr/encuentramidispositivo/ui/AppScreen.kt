@@ -68,6 +68,7 @@ fun AppScreen(viewModel: MainViewModel) {
             snackbar = snackbar,
             onCreateGroup = viewModel::createFamilyGroup,
             onJoinGroup = viewModel::joinFamilyGroup,
+            onRefresh = viewModel::refresh,
             onSignOut = viewModel::signOut,
         )
     } else {
@@ -148,6 +149,7 @@ private fun FamilySetupScreen(
     snackbar: SnackbarHostState,
     onCreateGroup: (String) -> Unit,
     onJoinGroup: (String) -> Unit,
+    onRefresh: () -> Unit,
     onSignOut: () -> Unit,
 ) {
     var groupName by remember { mutableStateOf("") }
@@ -200,6 +202,13 @@ private fun FamilySetupScreen(
                 enabled = !state.loading && inviteCode.length == 8,
             ) {
                 Text("Unirme al grupo")
+            }
+            TextButton(
+                onClick = onRefresh,
+                modifier = Modifier.align(Alignment.CenterHorizontally).padding(top = 8.dp),
+                enabled = !state.loading,
+            ) {
+                Text("Ya tengo un grupo: cargarlo")
             }
             if (state.loading) {
                 CircularProgressIndicator(modifier = Modifier.align(Alignment.CenterHorizontally).padding(16.dp))
